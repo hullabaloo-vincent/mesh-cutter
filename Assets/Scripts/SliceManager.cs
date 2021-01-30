@@ -1,9 +1,34 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class MouseSlice : MonoBehaviour {
 
-    public GameObject plane;
+/*
+* CREDIT: https://github.com/hugoscurti/mesh-cutter
+* MIT License
+*
+* Copyright (c) 2019 Hugo Scurti
+*
+* Permission is hereby granted, free of charge, to any person obtaining a copy
+* of this software and associated documentation files (the "Software"), to deal
+* in the Software without restriction, including without limitation the rights
+* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+* copies of the Software, and to permit persons to whom the Software is
+* furnished to do so, subject to the following conditions:
+*
+* The above copyright notice and this permission notice shall be included in all
+* copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+* OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+* SOFTWARE.
+*/
+
+public class SliceManager : MonoBehaviour {
+
     public Transform ObjectContainer;
 
     // How far away from the slice do we separate resulting objects
@@ -11,56 +36,32 @@ public class MouseSlice : MonoBehaviour {
 
     // Do we draw a plane object associated with the slice
     private Plane slicePlane = new Plane();
-    public bool drawPlane;
-    
-    // Reference to the line renderer
-    public ScreenLineRenderer lineRenderer;
 
     private MeshCutter meshCutter;
     private TempMesh biggerMesh, smallerMesh;
 
-    #region Utility Functions
+    public GameObject StartSword;
+    public GameObject EndSword;
 
-    void DrawPlane(Vector3 start, Vector3 end, Vector3 normalVec)
-    {
-        Quaternion rotate = Quaternion.FromToRotation(Vector3.up, normalVec);
+    public Material InsideMat;
 
-        plane.transform.localRotation = rotate;
-        plane.transform.position = (end + start) / 2;
-        plane.SetActive(true);
-    }
 
-    #endregion
-
-    // Use this for initialization
     void Start () {
-        // Initialize a somewhat big array so that it doesn't resize
         meshCutter = new MeshCutter(256);
 	}
 
-    private void OnEnable()
+    private void OnTriggerEnter(Collider other)
     {
-        lineRenderer.OnLineDrawn += OnLineDrawn;
-    }
+        Debug.Log("Slicing: " + other.gameObject.name);
+        Vector3 depth = StartSword.transform.position;
+        var planeTangent = (EndSword.transform.position - StartSword.transform.position).normalized;
 
-    private void OnDisable()
-    {
-        lineRenderer.OnLineDrawn -= OnLineDrawn;
-    }
-
-    private void OnLineDrawn(Vector3 start, Vector3 end, Vector3 depth)
-    {
-        var planeTangent = (end - start).normalized;
-
-        // if we didn't drag, we set tangent to be on x
         if (planeTangent == Vector3.zero)
             planeTangent = Vector3.right;
 
         var normalVec = Vector3.Cross(depth, planeTangent);
 
-        if (drawPlane) DrawPlane(start, end, normalVec);
-
-        SliceObjects(start, normalVec);
+        SliceObjects(StartSword.transform.position, normalVec);
     }
     
 
@@ -100,7 +101,6 @@ public class MouseSlice : MonoBehaviour {
 
         if (!meshCutter.SliceMesh(mesh, ref slicePlane))
         {
-            // Put object in the respective list
             if (slicePlane.GetDistanceToPoint(meshCutter.GetFirstVertex()) >= 0)
                 positiveObjects.Add(obj.transform);
             else
@@ -109,9 +109,6 @@ public class MouseSlice : MonoBehaviour {
             return false;
         }
 
-        // TODO: Update center of mass
-
-        // Silly condition that labels which mesh is bigger to keep the bigger mesh in the original gameobject
         bool posBigger = meshCutter.PositiveMesh.surfacearea > meshCutter.NegativeMesh.surfacearea;
         if (posBigger)
         {
@@ -129,8 +126,7 @@ public class MouseSlice : MonoBehaviour {
         newObject.transform.SetPositionAndRotation(obj.transform.position, obj.transform.rotation);
         var newObjMesh = newObject.GetComponent<MeshFilter>().mesh;
 
-        // Put the bigger mesh in the original object
-        // TODO: Enable collider generation (either the exact mesh or compute smallest enclosing sphere)
+
         ReplaceMesh(mesh, biggerMesh);
         ReplaceMesh(newObjMesh, smallerMesh);
 
@@ -140,10 +136,6 @@ public class MouseSlice : MonoBehaviour {
         return true;
     }
 
-
-    /// <summary>
-    /// Replace the mesh with tempMesh.
-    /// </summary>
     void ReplaceMesh(Mesh mesh, TempMesh tempMesh, MeshCollider collider = null)
     {
         mesh.Clear();
@@ -151,8 +143,7 @@ public class MouseSlice : MonoBehaviour {
         mesh.SetTriangles(tempMesh.triangles, 0);
         mesh.SetNormals(tempMesh.normals);
         mesh.SetUVs(0, tempMesh.uvs);
-        
-        //mesh.RecalculateNormals();
+        mesh.RecalculateNormals();
         mesh.RecalculateTangents();
 
         if (collider != null && collider.enabled)
@@ -161,18 +152,6 @@ public class MouseSlice : MonoBehaviour {
             collider.convex = true;
         }
     }
-
-    void SeparateMeshes(Transform posTransform, Transform negTransform, Vector3 localPlaneNormal)
-    {
-        // Bring back normal in world space
-        Vector3 worldNormal = ((Vector3)(posTransform.worldToLocalMatrix.transpose * localPlaneNormal)).normalized;
-
-        Vector3 separationVec = worldNormal * separation;
-        // Transform direction in world coordinates
-        posTransform.position += separationVec;
-        negTransform.position -= separationVec;
-    }
-
     void SeparateMeshes(List<Transform> positives, List<Transform> negatives, Vector3 worldPlaneNormal)
     {
         int i;
